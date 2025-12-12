@@ -1,0 +1,8 @@
+{
+  "name": "Magic Mirror",
+  "description": "A mystical mirror that sees you and transforms your reflection using Gemini Live API and Image Editing.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
