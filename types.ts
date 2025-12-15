@@ -33,4 +33,5 @@ export interface Persona {
   systemInstruction: string;
   icon: any; // React Node
   color: string;
+  ambientUrl: string; // Background sound URL
 }

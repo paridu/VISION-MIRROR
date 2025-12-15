@@ -1,5 +1,5 @@
 import React from 'react';
-import MagicMirror from './components/MagicMirror';
+import { MagicMirror } from './components/MagicMirror';
 import { Sparkles } from 'lucide-react';
 
 const App: React.FC = () => {

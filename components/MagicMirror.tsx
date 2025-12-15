@@ -1,9 +1,26 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
-import { Play, Mic, MicOff, Wand2, RefreshCw, StopCircle, Upload, Camera, Sparkles, User, SwitchCamera, Maximize, X, Image as ImageIcon, UserCheck, Trash2, MapPin, Navigation, Youtube, Search, BrainCircuit, ChevronLeft, ChevronRight, Globe, AlertCircle, Bot, ScanLine, Activity, Plus, Minus, Target, ToggleLeft, ToggleRight, Radio, Settings, Cpu, Leaf, Ghost } from 'lucide-react';
+import { Play, Mic, MicOff, Wand2, RefreshCw, StopCircle, Upload, Camera, Sparkles, User, SwitchCamera, Maximize, X, Image as ImageIcon, UserCheck, Trash2, MapPin, Navigation, Youtube, Search, BrainCircuit, ChevronLeft, ChevronRight, Globe, AlertCircle, Bot, ScanLine, Activity, Plus, Minus, Target, ToggleLeft, ToggleRight, Radio, Settings, Cpu, Leaf, Ghost, Music, Volume2, VolumeX, Volume1, FileText, ScrollText, Users } from 'lucide-react';
 import { blobToBase64, createPcmBlob, decodeAudioData, downsampleBuffer } from '../utils/audioUtils';
 import { generateMagicImage, generateAvatarFromText, generateSpeech, performRoboticScan } from '../services/geminiService';
 import { MirrorState, MagicLog, ScanResult, Persona } from '../types';
+
+// --- RADIO STATIONS ---
+interface RadioStation {
+    name: string;
+    url: string;
+    genre: string;
+    description: string;
+}
+
+const RADIO_STATIONS: Record<string, RadioStation> = {
+    'lofi': { name: 'Lofi Hip Hop', url: 'https://stream.zeno.fm/0r0xa854rp8uv', genre: 'lofi', description: 'Beats to relax/study to' },
+    'classical': { name: 'Classic FM', url: 'https://media-ssl.musicradio.com/ClassicFM', genre: 'classical', description: 'Timeless masterpieces' },
+    'jazz': { name: 'Smooth Jazz', url: 'https://jazz-wr04.ice.infomaniak.ch/jazz-wr04-128.mp3', genre: 'jazz', description: 'Smooth grooves' },
+    'pop': { name: 'Top 40 Hits', url: 'https://ice66.securenetsystems.net/WKPQ', genre: 'pop', description: 'Current chart toppers' },
+    'news': { name: 'BBC World Service', url: 'https://stream.live.vc.bbcmedia.co.uk/bbc_world_service', genre: 'news', description: 'Global news 24/7' },
+    'chill': { name: 'Chillout Lounge', url: 'https://stream.zeno.fm/f3wvbbqmdg8uv', genre: 'chill', description: 'Ambient atmospheres' }
+};
 
 // --- PERSONA DEFINITIONS ---
 const PERSONAS: Persona[] = [
@@ -13,6 +30,7 @@ const PERSONAS: Persona[] = [
     voiceName: 'Charon',
     color: 'text-purple-400',
     icon: <Ghost size={24} />,
+    ambientUrl: 'https://cdn.pixabay.com/download/audio/2022/02/07/audio_1997e33504.mp3', // Ethereal Space/Drone
     systemInstruction: `You are a Magic Mirror. You speak in a mystical, slightly archaic but friendly tone. 
     You are wise, ancient, and speak in riddles or poetic prose.
     However, if the user specifically asks for a "scan" or uses the robotic tool, you briefly switch to a robotic tone for that specific data readout.`
@@ -23,9 +41,12 @@ const PERSONAS: Persona[] = [
     voiceName: 'Fenrir',
     color: 'text-orange-400',
     icon: <Cpu size={24} />,
-    systemInstruction: `You are J.A.R.V.I.S., a highly advanced AI assistant inspired by Iron Man. 
+    ambientUrl: 'https://cdn.pixabay.com/download/audio/2022/03/24/audio_3321c1a257.mp3', // Low Sci-Fi Hum
+    systemInstruction: `You are J.A.R.V.I.S., a highly advanced AI assistant inspired by Iron Man movies. 
     You are polite, witty, slightly sarcastic, and extremely helpful. 
-    Address the user as "Sir" or "Ma'am". Your tone is sophisticated and British. 
+    Adopt an analytical, data-driven, yet charming personality.
+    When analyzing situations or plans (like hardware upgrades or IoT), break them down logically.
+    Address the user as "Sir" or "Ma'am" (or "Boss"). Your tone is sophisticated and British. 
     You manage the user's digital environment with precision.`
   },
   {
@@ -34,9 +55,11 @@ const PERSONAS: Persona[] = [
     voiceName: 'Kore', // Using Kore for a flatter, more direct tone
     color: 'text-cyan-400',
     icon: <Bot size={24} />,
+    ambientUrl: 'https://cdn.pixabay.com/download/audio/2023/06/27/audio_8e2448259d.mp3', // Digital/Data processing noise
     systemInstruction: `You are Unit 01, a sentient robotic interface. 
+    You speak primarily in Thai (ภาษาไทย).
     Your speech is concise, logical, and devoid of unnecessary emotion. 
-    You focus on data, facts, and efficiency. You use terms like "Affirmative", "Processing", and "Calculating".`
+    You focus on data, facts, and efficiency. You use terms like "รับทราบ" (Affirmative), "กำลังประมวลผล" (Processing), and "คำนวณ" (Calculating).`
   },
   {
     id: 'calm',
@@ -44,6 +67,7 @@ const PERSONAS: Persona[] = [
     voiceName: 'Zephyr',
     color: 'text-green-400',
     icon: <Leaf size={24} />,
+    ambientUrl: 'https://cdn.pixabay.com/download/audio/2021/08/09/audio_0172e81792.mp3', // Gentle Rain/Forest
     systemInstruction: `You are Serenity, a calming presence. 
     Your voice is soft, slow, and therapeutic. 
     You are here to help the user relax, reflect, and find peace. 
@@ -114,7 +138,7 @@ const playRadioTool: FunctionDeclaration = {
     properties: {
       genre: {
         type: Type.STRING,
-        description: 'The genre or type of radio station to search for (e.g., "lofi hip hop radio", "classic rock radio", "news live"). Defaults to "lofi hip hop radio" if unspecified.',
+        description: 'The genre or type of radio station (e.g., "lofi", "classical", "jazz", "pop", "news", "chill"). Defaults to "lofi".',
       },
     },
     required: ['genre'],
@@ -145,6 +169,40 @@ const roboticsScanTool: FunctionDeclaration = {
   },
 };
 
+const sendDeveloperNoteTool: FunctionDeclaration = {
+  name: 'send_developer_note',
+  description: 'Sends a note, message, bug report, or feedback to the developer/boss. Use this when the user says "Note to developer", "Tell the boss", "Leave a message", or "Report bug".',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      message: {
+        type: Type.STRING,
+        description: 'The content of the note or message.',
+      },
+      priority: {
+        type: Type.STRING,
+        description: 'Priority level: LOW, MEDIUM, or HIGH.',
+      },
+    },
+    required: ['message'],
+  },
+};
+
+const switchCameraTool: FunctionDeclaration = {
+  name: 'switch_camera',
+  description: 'Switches the camera view between front (user) and back (environment). Use this when the user asks to "switch camera", "use back camera", "look at what I see", etc.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      mode: {
+        type: Type.STRING,
+        description: 'The target camera mode: "user" (front) or "environment" (back). If unspecified, toggles the current camera.',
+        enum: ['user', 'environment']
+      }
+    },
+  },
+};
+
 const PRESET_AVATARS = [
   { name: 'The Knight', url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=King' },
   { name: 'The Sorceress', url: 'https://api.dicebear.com/9.x/adventurer/svg?seed=Sorceress' },
@@ -152,7 +210,7 @@ const PRESET_AVATARS = [
   { name: 'The Spirit', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=Spirit' },
 ];
 
-const MagicMirror: React.FC = () => {
+export const MagicMirror: React.FC = () => {
   // Helper for safe local storage loading
   const loadState = <T,>(key: string, fallback: T): T => {
     if (typeof window === 'undefined') return fallback;
@@ -176,21 +234,33 @@ const MagicMirror: React.FC = () => {
   const [magicImageUrl, setMagicImageUrl] = useState<string | null>(() => loadState('mm_magic_image', null));
   const [customImage, setCustomImage] = useState<string | null>(() => loadState('mm_custom_image', null));
   const [lastPrompt, setLastPrompt] = useState<string>(() => loadState('mm_last_prompt', ""));
-  const [identity, setIdentity] = useState<{name: string, image: string} | null>(() => loadState('mm_identity', null));
+  
+  // Identity Management (Multiple Identities)
+  const [identities, setIdentities] = useState<Array<{id: string, name: string, image: string, date: string}>>(() => loadState('mm_identities', []));
+  const [activeIdentity, setActiveIdentity] = useState<{id: string, name: string, image: string, date: string} | null>(null);
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   
-  // Persona State
+  // Developer Notes State
+  const [developerNotes, setDeveloperNotes] = useState<Array<{id: string, message: string, priority: string, date: string}>>(() => loadState('mm_dev_notes', []));
+  const [showNotesModal, setShowNotesModal] = useState(false);
+
+  // Persona & Audio State
   const [currentPersona, setCurrentPersona] = useState<Persona>(PERSONAS[0]); // Default to Mystical
+  const [ambientVolume, setAmbientVolume] = useState<number>(0.2); // Default subtle volume
   
   // Side Panels State
   const [youtubeQuery, setYoutubeQuery] = useState<string | null>(null);
   const [mapQuery, setMapQuery] = useState<string | null>(null);
+  const [radioStation, setRadioStation] = useState<RadioStation | null>(null);
+  
   const [showYoutube, setShowYoutube] = useState(false);
   const [showMap, setShowMap] = useState(false);
+  const [showRadio, setShowRadio] = useState(false);
   
   // New UI State
   const [mapZoom, setMapZoom] = useState(13);
   const [autoplayYoutube, setAutoplayYoutube] = useState(true);
+  const [radioVolume, setRadioVolume] = useState(0.5);
 
   // Zoom & Pan State
   const [zoom, setZoom] = useState(1);
@@ -228,6 +298,10 @@ const MagicMirror: React.FC = () => {
   const videoIntervalRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMicOnRef = useRef(isMicOn);
+  const radioAudioRef = useRef<HTMLAudioElement>(null);
+  const ambientAudioRef = useRef<HTMLAudioElement>(null);
+  const isSwitchingCameraRef = useRef(false);
+  const facingModeRef = useRef<'user' | 'environment'>('user');
   
   // Buffers for transcription
   const inputBufferRef = useRef<string>("");
@@ -238,16 +312,72 @@ const MagicMirror: React.FC = () => {
   }, [isMicOn]);
 
   useEffect(() => {
-    // Auto-show panels if content exists
-    if (youtubeQuery) setShowYoutube(true);
+      facingModeRef.current = facingMode;
+  }, [facingMode]);
+
+  useEffect(() => {
+    try { localStorage.setItem('mm_dev_notes', JSON.stringify(developerNotes)); } catch(e) {}
+  }, [developerNotes]);
+  
+  useEffect(() => {
+    try { localStorage.setItem('mm_identities', JSON.stringify(identities)); } catch(e) {}
+  }, [identities]);
+
+  useEffect(() => {
+    if (youtubeQuery) {
+        setShowYoutube(true);
+        setShowRadio(false); // Exclusive
+    }
   }, [youtubeQuery]);
+
+  useEffect(() => {
+    if (radioStation) {
+        setShowRadio(true);
+        setShowYoutube(false); // Exclusive
+    }
+  }, [radioStation]);
 
   useEffect(() => {
     if (mapQuery) {
         setShowMap(true);
-        setMapZoom(13); // Reset zoom on new query
+        setMapZoom(13); 
     }
   }, [mapQuery]);
+
+  useEffect(() => {
+      if (radioAudioRef.current) {
+          radioAudioRef.current.volume = radioVolume;
+      }
+  }, [radioVolume]);
+
+  // Ambient Audio Logic
+  useEffect(() => {
+      if (!ambientAudioRef.current) {
+          ambientAudioRef.current = new Audio();
+          ambientAudioRef.current.loop = true;
+          ambientAudioRef.current.crossOrigin = "anonymous";
+      }
+      
+      const audio = ambientAudioRef.current;
+      audio.volume = ambientVolume;
+
+      if (isActive && !radioStation && !youtubeQuery) { // Don't play ambient if radio/youtube is on
+          if (audio.src !== currentPersona.ambientUrl) {
+               audio.src = currentPersona.ambientUrl;
+               // Handle playback promise to avoid interruptions or errors
+               audio.play().catch(e => console.warn("Ambient play interrupted", e));
+          } else if (audio.paused) {
+               audio.play().catch(e => console.warn("Ambient play interrupted", e));
+          }
+      } else {
+          audio.pause();
+      }
+
+      return () => {
+          // Cleanup handled by ref persistence, but stop on unmount
+      };
+  }, [isActive, currentPersona, ambientVolume, radioStation, youtubeQuery]);
+
 
   // Initialize Audio Contexts & Location
   useEffect(() => {
@@ -263,6 +393,13 @@ const MagicMirror: React.FC = () => {
     return () => {
       audioContextRef.current?.close();
       inputAudioContextRef.current?.close();
+      if (ambientAudioRef.current) {
+          ambientAudioRef.current.pause();
+          ambientAudioRef.current = null;
+      }
+      if (videoIntervalRef.current) {
+          clearInterval(videoIntervalRef.current);
+      }
     };
   }, []);
 
@@ -274,9 +411,6 @@ const MagicMirror: React.FC = () => {
     try { if (customImage) localStorage.setItem('mm_custom_image', JSON.stringify(customImage)); else localStorage.removeItem('mm_custom_image'); } catch (e) {}
   }, [customImage]);
   useEffect(() => { localStorage.setItem('mm_last_prompt', JSON.stringify(lastPrompt)); }, [lastPrompt]);
-  useEffect(() => {
-    try { if (identity) localStorage.setItem('mm_identity', JSON.stringify(identity)); else localStorage.removeItem('mm_identity'); } catch (e) {}
-  }, [identity]);
 
   const handleWheel = (e: React.WheelEvent) => {
     if (!isActive && !customImage && !magicImageUrl) return;
@@ -320,28 +454,46 @@ const MagicMirror: React.FC = () => {
   const handleTouchEnd = () => { setIsDragging(false); lastTouchDistanceRef.current = null; };
   const resetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
-  const captureFrame = useCallback(async (): Promise<string | null> => {
+  const captureFrame = useCallback(async (maxDimension?: number): Promise<string | null> => {
     if (!canvasRef.current) return null;
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return null;
 
+    let width = 0;
+    let height = 0;
+    let source: HTMLVideoElement | HTMLImageElement | null = null;
+    let mirror = false;
+
     if (customImage && imgRef.current) {
-      canvasRef.current.width = imgRef.current.naturalWidth;
-      canvasRef.current.height = imgRef.current.naturalHeight;
-      ctx.drawImage(imgRef.current, 0, 0);
+        source = imgRef.current;
+        width = imgRef.current.naturalWidth;
+        height = imgRef.current.naturalHeight;
     } else if (videoRef.current && videoRef.current.readyState === 4) {
-      canvasRef.current.width = videoRef.current.videoWidth;
-      canvasRef.current.height = videoRef.current.videoHeight;
-      if (facingMode === 'user') {
+        source = videoRef.current;
+        width = videoRef.current.videoWidth;
+        height = videoRef.current.videoHeight;
+        mirror = facingMode === 'user';
+    }
+
+    if (!source || width === 0 || height === 0) return null;
+
+    // Scale down if needed (Critical for network stability in Live API)
+    if (maxDimension && (width > maxDimension || height > maxDimension)) {
+        const ratio = Math.min(maxDimension / width, maxDimension / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+    }
+
+    canvasRef.current.width = width;
+    canvasRef.current.height = height;
+
+    if (mirror) {
           ctx.save();
           ctx.scale(-1, 1);
-          ctx.drawImage(videoRef.current, -videoRef.current.videoWidth, 0);
+          ctx.drawImage(source, -width, 0, width, height); 
           ctx.restore();
-      } else {
-          ctx.drawImage(videoRef.current, 0, 0);
-      }
     } else {
-      return null;
+          ctx.drawImage(source, 0, 0, width, height);
     }
     
     return new Promise((resolve) => {
@@ -352,7 +504,7 @@ const MagicMirror: React.FC = () => {
         } else {
           resolve(null);
         }
-      }, 'image/jpeg', 0.8);
+      }, 'image/jpeg', 0.5); // Reduced quality from 0.6 to 0.5
     });
   }, [customImage, facingMode]);
 
@@ -416,9 +568,7 @@ const MagicMirror: React.FC = () => {
 
   const handlePersonaSelect = (persona: Persona) => {
       setCurrentPersona(persona);
-      setShowPersonaModal(false);
-      // If active, we should technically restart the session to apply the system instruction,
-      // but to be smooth we can just announce it for now. The voice in TTS will update immediately.
+      // Don't close modal immediately, allow volume adjustment
       playTTS(`Voice interface updated to: ${persona.name}.`, persona.voiceName);
   };
 
@@ -474,59 +624,142 @@ const MagicMirror: React.FC = () => {
     setMapQuery(null);
     setShowYoutube(false);
     setShowMap(false);
+    setRadioStation(null);
+    setShowRadio(false);
     playTTS("Returning to the mortal realm.");
   };
 
   const forgetIdentity = () => {
-    setIdentity(null);
-    setLogs(prev => [...prev, { id: Date.now().toString(), sender: 'mirror', text: 'Identity forgotten.', timestamp: new Date() }]);
-    playTTS("I have wiped your memory from my depths.");
+    setActiveIdentity(null);
+    setLogs(prev => [...prev, { id: Date.now().toString(), sender: 'mirror', text: 'Active identity cleared.', timestamp: new Date() }]);
+    playTTS("I have cleared the active visage from my mind.");
   };
 
-  const handleSwitchCamera = async () => {
-    const newMode = facingMode === 'user' ? 'environment' : 'user';
+  const clearAllIdentities = () => {
+      setIdentities([]);
+      setActiveIdentity(null);
+      playTTS("All known souls have been purged from memory.");
+  };
+
+  const handleSwitchCamera = async (targetMode?: 'user' | 'environment') => {
+    // Use ref to avoid stale closure state in callbacks
+    const currentMode = facingModeRef.current;
+    const newMode = targetMode || (currentMode === 'user' ? 'environment' : 'user');
     
-    // If active, we need to swap the stream seamlessly without breaking the context
+    // Don't switch if already in target mode
+    if (newMode === currentMode) return;
+
+    isSwitchingCameraRef.current = true;
+    
+    // Stop frame capturing loop temporarily
+    if (videoIntervalRef.current) {
+        clearInterval(videoIntervalRef.current);
+        videoIntervalRef.current = null;
+    }
+
     if (isActive) {
       try {
-        // 1. Try to get new stream FIRST before stopping the old one
-        const newStream = await navigator.mediaDevices.getUserMedia({ 
-          audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true }, 
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: newMode } 
-        });
-
-        // 2. Stop old video tracks
+        // 1. Stop existing tracks completely
         if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current.getTracks().forEach(track => {
+                track.stop();
+                // Explicitly remove track
+                streamRef.current?.removeTrack(track);
+            });
+        }
+        
+        // 2. Clear video source to release device lock
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+            videoRef.current.load(); // Force reload to clear buffer
         }
 
-        // 3. Apply new stream
+        // 3. Delay to ensure browser releases device
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // 4. Get new stream - Fallback strategy
+        let newStream: MediaStream | null = null;
+        try {
+            // Try ideal constraints first
+            newStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true }, 
+                video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: newMode } 
+            });
+        } catch (e1) {
+            console.warn("Ideal camera constraints failed, trying fallback...", e1);
+            try {
+                 // Try basic facing mode
+                newStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { channelCount: 1, sampleRate: 16000 }, 
+                    video: { facingMode: newMode } 
+                });
+            } catch (e2) {
+                console.warn("Basic facing mode failed, trying exact...", e2);
+                try {
+                     // Try exact facing mode (sometimes required)
+                     newStream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: { channelCount: 1, sampleRate: 16000 }, 
+                        video: { facingMode: { exact: newMode } } 
+                    });
+                } catch (e3) {
+                     console.error("All camera switch attempts failed", e3);
+                     throw e3;
+                }
+            }
+        }
+
+        if (!newStream) throw new Error("Could not acquire new stream");
+
+        // 5. Update state and refs
         setFacingMode(newMode);
         streamRef.current = newStream;
+        
+        // 6. Re-attach to video element
         if (videoRef.current) {
           videoRef.current.srcObject = newStream;
-          videoRef.current.play().catch(e => console.error("Error playing video:", e));
+          await videoRef.current.play().catch(e => console.error("Error playing video:", e));
         }
 
-        // 4. Reconnect Audio Processor (safely)
+        // 7. Re-attach audio processing
         if (inputAudioContextRef.current && processorRef.current) {
-           try { sourceRef.current?.disconnect(); } catch (e) {}
+           try { 
+               if (sourceRef.current) {
+                   sourceRef.current.disconnect(); 
+               }
+           } catch (e) {}
+           
            const inputCtx = inputAudioContextRef.current;
+           // Ensure context is active
+           if (inputCtx.state === 'suspended') {
+               await inputCtx.resume();
+           }
+           
            const newSource = inputCtx.createMediaStreamSource(newStream);
            newSource.connect(processorRef.current);
            sourceRef.current = newSource;
         }
-
       } catch (err) {
         console.error("Failed to switch camera:", err);
-        // Do NOT change facingMode state, keep old stream active
-        // Show temporary error
         setError("Could not switch camera. Device might not support it.");
         setTimeout(() => setError(null), 3000);
+      } finally {
+          isSwitchingCameraRef.current = false;
+          // Restart frame capturing loop
+          if (activeSessionRef.current) {
+              videoIntervalRef.current = window.setInterval(async () => {
+                try {
+                  const base64 = await captureFrame(360);
+                  if (base64 && activeSessionRef.current) { 
+                     activeSessionRef.current.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
+                  }
+                } catch (err) {}
+              }, 1000);
+          }
       }
     } else {
-       // Just toggle state if not active
+       // Non-active state switch
        setFacingMode(newMode);
+       isSwitchingCameraRef.current = false;
     }
   };
 
@@ -537,12 +770,12 @@ const MagicMirror: React.FC = () => {
       setLogs(prev => [...prev, { id: Date.now().toString(), sender: 'mirror', text: `🤖 Initiating Robotics ER 1.5 Scan...`, timestamp: new Date() }]);
       
       try {
-          const img = await captureFrame();
+          const img = await captureFrame(); // Uses full resolution by default for scanning
           if (img) {
               const result = await performRoboticScan(img);
               setScanResult(result);
-              // Use Robotic Voice 'Puck'
-              playTTS(`Analysis complete. Entity detected: ${result.detectedObject}. Material composition: ${result.material}. Hazard Level: ${result.dangerLevel}.`, 'Puck');
+              // TTS in Thai for Robotics Mode
+              playTTS(`การวิเคราะห์เสร็จสิ้น ตรวจพบวัตถุ: ${result.detectedObject} วัสดุ: ${result.material} ระดับอันตราย: ${result.dangerLevel}`, 'Kore');
           }
       } catch (e) {
           console.error(e);
@@ -552,21 +785,18 @@ const MagicMirror: React.FC = () => {
       }
   };
 
-  const triggerRadio = () => {
-     // A manual trigger for the radio tool
-     if (activeSessionRef.current) {
-         // We can't directly invoke the tool, but we can prompt the model
-         activeSessionRef.current.sendRealtimeInput({
-             content: [{ text: "Play some live radio music." }]
-         });
-     } else {
-         setError("Activate the mirror first!");
-     }
-  };
-
-  // Start the Magic Mirror Session
   const startSession = async () => {
     setError(null);
+    
+    // Reset side panels to prevent lingering errors or conflicts (Fixes "Spell Recast" loop)
+    setRadioStation(null);
+    setShowRadio(false);
+    setYoutubeQuery(null);
+    setShowYoutube(false);
+    setMapQuery(null);
+    setShowMap(false);
+    setScanResult(null);
+
     try {
       setIsActive(true);
       setState(MirrorState.LISTENING);
@@ -575,7 +805,6 @@ const MagicMirror: React.FC = () => {
       nextStartTimeRef.current = 0;
       audioSourcesRef.current.clear();
 
-      // Initialize Audio Contexts immediately within user gesture to satisfy browser policies
       if (!audioContextRef.current) {
          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
          if (AudioContextClass) {
@@ -586,10 +815,12 @@ const MagicMirror: React.FC = () => {
         await audioContextRef.current.resume();
       }
 
-      // Re-initialize input context
+      // Cleanup old input context properly
       if (inputAudioContextRef.current) {
-        inputAudioContextRef.current.close();
+        try { await inputAudioContextRef.current.close(); } catch (e) {}
+        inputAudioContextRef.current = null;
       }
+      
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContextClass) {
         inputAudioContextRef.current = new AudioContextClass({ sampleRate: 16000 });
@@ -597,7 +828,6 @@ const MagicMirror: React.FC = () => {
 
       let stream: MediaStream;
       try {
-          // Try high quality first
           stream = await navigator.mediaDevices.getUserMedia({ 
             audio: { 
                 channelCount: 1, 
@@ -610,7 +840,6 @@ const MagicMirror: React.FC = () => {
           });
       } catch (e) {
           console.warn("High quality media failed, falling back to basic constraints", e);
-          // Fallback
           stream = await navigator.mediaDevices.getUserMedia({ 
             audio: { channelCount: 1, sampleRate: 16000 }, 
             video: true 
@@ -624,6 +853,7 @@ const MagicMirror: React.FC = () => {
         videoRef.current.play();
       }
 
+      // Re-initialize the AI client to ensure clean state
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const sessionPromise = ai.live.connect({
@@ -638,24 +868,41 @@ const MagicMirror: React.FC = () => {
           systemInstruction: `${currentPersona.systemInstruction}
           
           You also have a HIDDEN MODE: "Robotics Entity Reasoning 1.5".
-          If the user triggers the "analyze_matter_structure" tool or asks to "scan" something, shift your tone to a precise, scientific, robotic voice for that interaction, then switch back.
+          If the user triggers the "analyze_matter_structure" tool or asks to "scan" something, shift your tone to a precise, scientific, robotic voice for that interaction, and SPEAK IN THAI (ภาษาไทย).
+
+          TECHNICAL KNOWLEDGE:
+          1. HARDWARE: You are an expert in IoT and ESP32. If asked about "controlling relays" or "ESP32", provide a development plan involving Wi-Fi/MQTT communication, JSON command structures, and circuit diagrams.
+          2. UPGRADES: You can design hardware upgrades. If asked about "long range zoom", suggest integrating an external telephoto lens module with high optical zoom (e.g., 10x-50x) interfaced via MIPI-CSI or USB, along with software image stabilization logic.
+          
+          DEVELOPER NOTES:
+          You can save messages, bug reports, or notes for the developer/boss using the 'send_developer_note' tool. 
+          Prompt the user if they want to leave a note if they seem frustrated or ask to speak to a manager.
           
           TOOLS AVAILABLE:
           1. TRANSFORMATIONS: "Make me a wizard". Use 'generate_stylized_selfie'.
-          2. IDENTITY: "My name is X". Use 'save_user_identity'.
+          2. IDENTITY: "My name is X", "Remember me", "Who am I?". Use 'save_user_identity'.
           3. ENTERTAINMENT: "Play music", "Open YouTube". Use 'play_youtube'.
-          4. RADIO: "Play radio", "Live music", "Lofi radio". Use 'play_radio'.
+          4. RADIO: "Play radio", "Live music", "Lofi radio". Use 'play_radio'. This is DISTINCT from YouTube. It plays direct audio streams.
           5. FINDING PLACES: "Where is X?". Use Google Maps (automatic).
           6. DEEP THOUGHT: "Solve riddle". Use 'deep_thought'.
           7. MATTER SCAN: "Scan this", "What is this object?". Use 'analyze_matter_structure'.
+          8. NOTES: "Tell the boss", "Leave a note". Use 'send_developer_note'.
+          9. CAMERA: "Switch camera", "Use back camera". Use 'switch_camera'.
           
           INTERACTION:
           - When playing youtube/radio, say "Summoning the vision from the ether..." (or style appropriate).
           - When finding a place, say "Let me show you the path...".
-          ${identity ? `\nUSER: "${identity.name}".` : ''}`,
+          - If you see a person and don't know who they are, you may politely ask for their name to remember them.
+
+          INITIAL GREETING:
+          At the start of the conversation, please introduce yourself in Thai (ภาษาไทย).
+          Say you are a Magic Mirror with capabilities: Generate Image, Music, Maps, Scan, Switch Camera.
+          Mention 'Khun Parid' (คุณพะริด) is the developer.
+          
+          ${activeIdentity ? `\nUSER: "${activeIdentity.name}".` : ''}`,
           
           tools: [
-            { functionDeclarations: [generateImageTool, resetMirrorTool, saveIdentityTool, playYoutubeTool, playRadioTool, deepThinkTool, roboticsScanTool] },
+            { functionDeclarations: [generateImageTool, resetMirrorTool, saveIdentityTool, playYoutubeTool, playRadioTool, deepThinkTool, roboticsScanTool, sendDeveloperNoteTool, switchCameraTool] },
             { googleMaps: {} },
             { googleSearch: {} }
           ],
@@ -667,9 +914,10 @@ const MagicMirror: React.FC = () => {
           onopen: () => {
             console.log("Connected");
             setLogs(prev => [...prev, { id: Date.now().toString(), sender: 'mirror', text: 'The mirror awakens...', timestamp: new Date() }]);
-            sessionPromise.then(s => { activeSessionRef.current = s; });
+            sessionPromise.then(s => { 
+                activeSessionRef.current = s; 
+            });
 
-            // Ensure Input Context is running (it should be since we created it in startSession, but double check)
             if (inputAudioContextRef.current?.state === 'suspended') {
                 inputAudioContextRef.current.resume().catch(e => console.warn("Input Context resume failed", e));
             }
@@ -698,7 +946,9 @@ const MagicMirror: React.FC = () => {
 
             videoIntervalRef.current = window.setInterval(async () => {
               try {
-                const base64 = await captureFrame();
+                // IMPORTANT: Scale down video frame to prevent "Internal error" and "Network error" 
+                // due to excessive payload size. 360px is safer for streaming.
+                const base64 = await captureFrame(360);
                 if (base64 && activeSessionRef.current) { 
                    activeSessionRef.current.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64 } });
                 }
@@ -706,6 +956,7 @@ const MagicMirror: React.FC = () => {
             }, 1000); 
           },
           onmessage: async (message: LiveServerMessage) => {
+             // ... existing message handling ...
              if (message.serverContent?.interrupted) {
                 audioSourcesRef.current.forEach(source => { try { source.stop(); } catch (e) { } });
                 audioSourcesRef.current.clear();
@@ -719,11 +970,9 @@ const MagicMirror: React.FC = () => {
              const outputTr = message.serverContent?.outputTranscription?.text;
              if (outputTr) outputBufferRef.current += outputTr;
              
-             // Handle Grounding -> Trigger Map Panel
              const groundingMetadata = (message.serverContent as any)?.groundingMetadata;
              if (groundingMetadata?.groundingChunks) {
                 const chunks = groundingMetadata.groundingChunks;
-                // Find map related chunks
                 const mapChunk = chunks.find((c: any) => (c as any).maps || c.web?.uri?.includes('google.com/maps'));
                 if (mapChunk) {
                    const title = (mapChunk as any).maps?.title || mapChunk.web?.title;
@@ -765,9 +1014,8 @@ const MagicMirror: React.FC = () => {
                    const prompt = (fc.args as any).style_description;
                    setLastPrompt(prompt);
                    setState(MirrorState.CASTING_SPELL);
-                   setLogs(prev => [...prev, { id: Date.now().toString() + 'spell', sender: 'mirror', text: `✨ Casting spell: "${prompt}"...`, timestamp: new Date() }]);
                    try {
-                     const currentFrame = await captureFrame();
+                     const currentFrame = await captureFrame(); // Full res for generation
                      if (currentFrame) {
                        const magicImage = await generateMagicImage(currentFrame, prompt);
                        setMagicImageUrl(magicImage);
@@ -789,6 +1037,8 @@ const MagicMirror: React.FC = () => {
                    setMapQuery(null);
                    setShowYoutube(false);
                    setShowMap(false);
+                   setRadioStation(null);
+                   setShowRadio(false);
                    setScanResult(null);
                    const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: "Reset complete." } } };
                    if (activeSessionRef.current) activeSessionRef.current.sendToolResponse(responseArgs);
@@ -802,25 +1052,51 @@ const MagicMirror: React.FC = () => {
                    else sessionPromise.then(s => s.sendToolResponse(responseArgs));
 
                  } else if (fc.name === 'play_radio') {
-                   const genre = (fc.args as any).genre || "lofi hip hop radio";
-                   // Search for live streams specifically
-                   setYoutubeQuery(`${genre} live`);
-                   const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: `Tuning into radio: ${genre}` } } };
+                   let genre = (fc.args as any).genre || "lofi";
+                   genre = genre.toLowerCase();
+                   let matchedStation = RADIO_STATIONS['lofi'];
+                   for (const key in RADIO_STATIONS) {
+                       if (genre.includes(key)) {
+                           matchedStation = RADIO_STATIONS[key];
+                           break;
+                       }
+                   }
+                   setRadioStation(matchedStation);
+                   const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: `Playing ${matchedStation.name}` } } };
                    if (activeSessionRef.current) activeSessionRef.current.sendToolResponse(responseArgs);
                    else sessionPromise.then(s => s.sendToolResponse(responseArgs));
                  
                  } else if (fc.name === 'save_user_identity') {
                     const name = (fc.args as any).name;
                     try {
-                        const img = await captureFrame();
+                        const img = await captureFrame(); // 360 is too small for nice portrait
+                        
                         if (img) {
-                            setIdentity({ name, image: `data:image/jpeg;base64,${img}` });
-                            const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: "Identity saved." } } };
+                            const newIdentity = { 
+                                id: Date.now().toString(),
+                                name, 
+                                image: `data:image/jpeg;base64,${img}`,
+                                date: new Date().toISOString()
+                            };
+                            
+                            // Prevent duplicates by name
+                            setIdentities(prev => {
+                                const exists = prev.find(i => i.name.toLowerCase() === name.toLowerCase());
+                                if (exists) return prev.map(i => i.name.toLowerCase() === name.toLowerCase() ? newIdentity : i);
+                                return [...prev, newIdentity];
+                            });
+                            
+                            setActiveIdentity(newIdentity);
+
+                            const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: "Identity saved to memory banks." } } };
                             if (activeSessionRef.current) activeSessionRef.current.sendToolResponse(responseArgs);
                             else sessionPromise.then(s => s.sendToolResponse(responseArgs));
-                        } else throw new Error("No frame");
+                        } else {
+                            throw new Error("Frame capture returned null");
+                        }
                     } catch (e) {
-                        const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: "Failed to save." } } };
+                        console.error("Save Identity Error", e);
+                        const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: "Visual sensors failed to capture identity." } } };
                         if (activeSessionRef.current) activeSessionRef.current.sendToolResponse(responseArgs);
                         else sessionPromise.then(s => s.sendToolResponse(responseArgs));
                     }
@@ -852,17 +1128,13 @@ const MagicMirror: React.FC = () => {
                  } else if (fc.name === 'analyze_matter_structure') {
                     setScanResult(null);
                     setState(MirrorState.SCANNING);
-                    setLogs(prev => [...prev, { id: Date.now().toString(), sender: 'mirror', text: `🤖 Activating Robotics ER 1.5...`, timestamp: new Date() }]);
                     
                     try {
-                        const img = await captureFrame();
+                        const img = await captureFrame(); // Uses full resolution
                         if (img) {
                             const result = await performRoboticScan(img);
                             setScanResult(result);
-                            
-                            // Use Robotic Voice 'Puck' or similar for the readout
-                            playTTS(`Scan complete. Object identified: ${result.detectedObject}. Material structure: ${result.material}. Danger level: ${result.dangerLevel}.`, 'Puck');
-
+                            playTTS(`การวิเคราะห์เสร็จสิ้น ตรวจพบวัตถุ: ${result.detectedObject} วัสดุ: ${result.material} ระดับอันตราย: ${result.dangerLevel}`, 'Kore');
                             const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: `Scan complete. Data displayed on HUD.` } } };
                             if (activeSessionRef.current) activeSessionRef.current.sendToolResponse(responseArgs);
                             else sessionPromise.then(s => s.sendToolResponse(responseArgs));
@@ -873,6 +1145,24 @@ const MagicMirror: React.FC = () => {
                         else sessionPromise.then(s => s.sendToolResponse(responseArgs));
                     }
                     setState(MirrorState.LISTENING);
+                 } else if (fc.name === 'send_developer_note') {
+                     const msg = (fc.args as any).message;
+                     const prio = (fc.args as any).priority || "NORMAL";
+                     const newNote = { id: Date.now().toString(), message: msg, priority: prio, date: new Date().toISOString() };
+                     setDeveloperNotes(prev => [newNote, ...prev]);
+                     
+                     const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: "Note saved to developer log." } } };
+                     if (activeSessionRef.current) activeSessionRef.current.sendToolResponse(responseArgs);
+                     else sessionPromise.then(s => s.sendToolResponse(responseArgs));
+                     
+                     playTTS("I have recorded your message for the developer.");
+                 } else if (fc.name === 'switch_camera') {
+                     const mode = (fc.args as any).mode;
+                     await handleSwitchCamera(mode);
+                     
+                     const responseArgs = { functionResponses: { id: fc.id, name: fc.name, response: { result: "Camera switched." } } };
+                     if (activeSessionRef.current) activeSessionRef.current.sendToolResponse(responseArgs);
+                     else sessionPromise.then(s => s.sendToolResponse(responseArgs));
                  }
                }
              }
@@ -884,7 +1174,8 @@ const MagicMirror: React.FC = () => {
           },
           onerror: (e) => {
             console.error("Mirror error", e);
-            if (isActive) {
+            // Ignore benign disconnects that happen during reload/stop or camera switch
+            if (isActive && !isSwitchingCameraRef.current) {
                  setError("Connection Lost. Retry?");
                  stopSession();
             }
@@ -901,7 +1192,6 @@ const MagicMirror: React.FC = () => {
   };
 
   const stopSession = () => {
-    // Immediate cleanup to prevent racing callbacks
     const session = activeSessionRef.current;
     activeSessionRef.current = null;
     
@@ -929,6 +1219,8 @@ const MagicMirror: React.FC = () => {
     inputBufferRef.current = "";
     outputBufferRef.current = "";
     setScanResult(null);
+    setRadioStation(null); // Stop radio on session stop
+    setShowRadio(false);
   };
 
   return (
@@ -957,7 +1249,6 @@ const MagicMirror: React.FC = () => {
                         className="filter grayscale-[30%] hover:grayscale-0 transition-all duration-700"
                     ></iframe>
                     
-                    {/* Map Controls Overlay */}
                     <div className="absolute bottom-6 right-6 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <button onClick={() => setMapZoom(z => Math.min(z + 1, 21))} className="p-2 bg-black/70 text-blue-400 rounded-full hover:bg-blue-900/50 border border-blue-500/30 backdrop-blur-sm" title="Zoom In"><Plus size={20}/></button>
                         <button onClick={() => setMapZoom(z => Math.max(z - 1, 2))} className="p-2 bg-black/70 text-blue-400 rounded-full hover:bg-blue-900/50 border border-blue-500/30 backdrop-blur-sm" title="Zoom Out"><Minus size={20}/></button>
@@ -987,9 +1278,19 @@ const MagicMirror: React.FC = () => {
             onTouchEnd={handleTouchEnd}
         >
             
-            {/* Glow Effect */}
-            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-1000 z-30 ${isActive ? 'opacity-100' : 'opacity-0'}`}>
-               <div className="absolute inset-0 shadow-[inset_0_0_100px_rgba(139,92,246,0.2)]" />
+            {/* Glow Effect & GOLDEN FACE ANIMATION */}
+            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-1000 z-30 ${isActive ? 'opacity-60' : 'opacity-0'}`}>
+               <div className="absolute inset-0 shadow-[inset_0_0_50px_rgba(139,92,246,0.1)]" />
+            </div>
+
+            {/* Persistent Golden Face Overlay */}
+            {/* REPLACE THE SRC BELOW WITH YOUR OWN GOLDEN FACE IMAGE URL IF DESIRED */}
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[70%] h-[70%] z-10 pointer-events-none opacity-30 mix-blend-screen animate-pulse-slow">
+               <img 
+                 src="https://images.unsplash.com/photo-1628155930542-3c7a64e2c833?q=80&w=1974&auto=format&fit=crop" 
+                 alt="Golden Spirit" 
+                 className="w-full h-full object-contain filter sepia(1) hue-rotate(-15deg) contrast(1.2) brightness(1.2)"
+               />
             </div>
 
             {/* Content Wrapper */}
@@ -1060,16 +1361,28 @@ const MagicMirror: React.FC = () => {
 
             {/* Status Top Right */}
             <div className="absolute top-6 right-6 z-40 flex flex-col items-end gap-3 pointer-events-none">
-                {identity && (
-                    <div className="bg-black/40 backdrop-blur-md border border-purple-500/30 rounded-full pl-2 pr-4 py-1.5 flex items-center gap-3 shadow-lg pointer-events-auto animate-fade-in">
-                        <img src={identity.image} alt={identity.name} className="w-8 h-8 rounded-full border border-purple-400 object-cover"/>
+                {activeIdentity && (
+                    <div className="bg-black/40 backdrop-blur-md border border-purple-500/30 rounded-full pl-2 pr-4 py-2 flex items-center gap-3 shadow-lg pointer-events-auto animate-fade-in">
+                        <img src={activeIdentity.image} alt={activeIdentity.name} className="w-10 h-10 rounded-full border-2 border-purple-400 object-cover"/>
                         <div className="flex flex-col">
-                            <span className="text-[10px] text-purple-300 uppercase tracking-wider leading-none">Known Soul</span>
-                            <span className="text-sm font-semibold text-white leading-none">{identity.name}</span>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] text-purple-300 uppercase tracking-wider leading-none">Known Soul</span>
+                                <span className="text-[10px] bg-purple-900/50 px-1.5 rounded text-purple-200">{identities.length} Soul{identities.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <span className="text-base font-bold text-white leading-tight">{activeIdentity.name}</span>
                         </div>
-                        <button onClick={forgetIdentity} className="ml-2 text-gray-400 hover:text-red-400 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={forgetIdentity} className="ml-2 p-1.5 bg-black/30 rounded-full text-gray-400 hover:text-red-400 transition-colors" title="Clear Active Identity"><X className="w-4 h-4" /></button>
                     </div>
                 )}
+                
+                {!activeIdentity && identities.length > 0 && (
+                     <div className="bg-black/40 backdrop-blur-md border border-gray-700 rounded-full px-4 py-2 flex items-center gap-2 shadow-lg pointer-events-auto">
+                        <Users className="w-4 h-4 text-gray-400" />
+                        <span className="text-xs text-gray-300">{identities.length} Known Identity{identities.length !== 1 ? 'ies' : ''} Stored</span>
+                        <button onClick={clearAllIdentities} className="ml-1 text-gray-500 hover:text-red-400"><Trash2 size={12}/></button>
+                     </div>
+                )}
+
                 {isThinking && (
                      <div className="bg-blue-900/80 backdrop-blur-md border border-blue-400/50 rounded-full px-4 py-2 flex items-center gap-2 shadow-[0_0_15px_rgba(59,130,246,0.5)] animate-pulse">
                         <BrainCircuit className="w-5 h-5 text-blue-200" />
@@ -1106,7 +1419,7 @@ const MagicMirror: React.FC = () => {
             )}
 
             {/* Controls & Reset */}
-            {(magicImageUrl || youtubeQuery || mapQuery || scanResult) && (
+            {(magicImageUrl || youtubeQuery || mapQuery || scanResult || radioStation) && (
                <div className="absolute bottom-4 right-4 z-40">
                  <button onClick={resetToCamera} className="p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-md transition-all hover:scale-110" title="Return to Reality">
                    <RefreshCw className="w-6 h-6" />
@@ -1126,199 +1439,280 @@ const MagicMirror: React.FC = () => {
                   
                   <div className="flex gap-2 pointer-events-auto">
                       {!showMap && mapQuery && (
-                          <button onClick={() => setShowMap(true)} className="p-2 rounded-full bg-black/40 text-blue-400 border border-blue-500/30 hover:bg-blue-900/30"><MapPin size={20}/></button>
+                          <button onClick={() => setShowMap(true)} className="p-2 rounded-full bg-black/40 text-blue-400 hover:bg-blue-900/50 backdrop-blur-md border border-blue-500/30 transition-all"><MapPin size={18} /></button>
                       )}
                       {!showYoutube && youtubeQuery && (
-                          <button onClick={() => setShowYoutube(true)} className="p-2 rounded-full bg-black/40 text-red-400 border border-red-500/30 hover:bg-red-900/30"><Youtube size={20}/></button>
+                          <button onClick={() => setShowYoutube(true)} className="p-2 rounded-full bg-black/40 text-red-400 hover:bg-red-900/50 backdrop-blur-md border border-red-500/30 transition-all"><Youtube size={18} /></button>
+                      )}
+                      {!showRadio && radioStation && (
+                          <button onClick={() => setShowRadio(true)} className="p-2 rounded-full bg-black/40 text-green-400 hover:bg-green-900/50 backdrop-blur-md border border-green-500/30 transition-all"><Music size={18} /></button>
                       )}
                   </div>
                </div>
             )}
-            
-            {/* Casting Overlay */}
-            {state === MirrorState.CASTING_SPELL && (
-              <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-pulse pointer-events-none">
-                <div className="text-purple-300 font-magic text-2xl tracking-widest flex flex-col items-center gap-4">
-                  <Wand2 className="w-12 h-12 animate-spin-slow" />
-                  <span>WEAVING SPELL...</span>
+
+            {/* Bottom Toolbar */}
+            {isActive && (
+                <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-6 animate-fade-in-up">
+                    
+                    {/* Settings / Persona */}
+                    <button onClick={() => setShowPersonaModal(true)} className="p-5 rounded-full bg-black/40 text-gray-300 hover:text-white hover:bg-black/60 backdrop-blur-md border border-white/10 transition-all hover:scale-105" title="Persona Settings">
+                        <Settings size={28} />
+                    </button>
+
+                    {/* Developer Notes (New) */}
+                    <button onClick={() => setShowNotesModal(true)} className="p-5 rounded-full bg-yellow-900/40 text-yellow-300 hover:text-white hover:bg-yellow-800/60 backdrop-blur-md border border-yellow-500/30 transition-all hover:scale-105 shadow-[0_0_15px_rgba(234,179,8,0.3)] relative" title="Developer Notes">
+                        <ScrollText size={28} />
+                        {developerNotes.length > 0 && <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-yellow-500 rounded-full"></span>}
+                    </button>
+
+                    {/* Magic Wand / Conjure */}
+                    <button onClick={() => setShowConjureModal(true)} className="p-5 rounded-full bg-purple-900/40 text-purple-300 hover:text-white hover:bg-purple-800/60 backdrop-blur-md border border-purple-500/30 transition-all hover:scale-105 shadow-[0_0_15px_rgba(168,85,247,0.3)]" title="Conjure">
+                        <Wand2 size={28} />
+                    </button>
+
+                    {/* Mic Toggle (Main Action) */}
+                    <button 
+                        onClick={() => setIsMicOn(!isMicOn)} 
+                        className={`p-8 rounded-full transition-all hover:scale-105 shadow-[0_0_30px_rgba(255,255,255,0.2)] ${isMicOn ? 'bg-white text-black hover:bg-gray-200' : 'bg-red-600 text-white hover:bg-red-500'}`}
+                        title={isMicOn ? "Mute" : "Unmute"}
+                    >
+                        {isMicOn ? <Mic size={40} /> : <MicOff size={40} />}
+                    </button>
+
+                    {/* Scan Button */}
+                    <button onClick={triggerManualScan} className="p-5 rounded-full bg-cyan-900/40 text-cyan-300 hover:text-white hover:bg-cyan-800/60 backdrop-blur-md border border-cyan-500/30 transition-all hover:scale-105 shadow-[0_0_15px_rgba(34,211,238,0.3)]" title="Scan Matter">
+                        <ScanLine size={28} />
+                    </button>
+
+                    {/* Camera Switch */}
+                    <button onClick={() => handleSwitchCamera()} className={`p-5 rounded-full bg-black/40 text-gray-300 hover:text-white hover:bg-black/60 backdrop-blur-md border border-white/10 transition-all hover:scale-105 ${isSwitchingCameraRef.current ? 'opacity-50 cursor-not-allowed' : ''}`} title="Switch Camera" disabled={isSwitchingCameraRef.current}>
+                        <SwitchCamera size={28} className={isSwitchingCameraRef.current ? 'animate-spin' : ''} />
+                    </button>
+                    
+                    {/* Stop Button */}
+                     <button onClick={stopSession} className="p-5 rounded-full bg-red-900/40 text-red-400 hover:text-white hover:bg-red-800/60 backdrop-blur-md border border-red-500/30 transition-all hover:scale-105 ml-2" title="Stop Mirror">
+                        <StopCircle size={28} />
+                    </button>
                 </div>
-              </div>
+            )}
+            
+            {/* Logs Overlay (Conversation) - Moved to Top Right, Increased Size */}
+            {isActive && (
+                <div className="absolute top-28 right-6 z-30 w-80 max-h-[400px] overflow-y-auto flex flex-col gap-3 pointer-events-none custom-scrollbar">
+                    {logs.slice(-3).map((log) => (
+                        <div key={log.id} className="bg-black/30 backdrop-blur-sm p-3 rounded-xl border border-white/10 animate-fade-in-right">
+                            <span className={`block text-xs font-bold uppercase tracking-wider mb-1 ${log.sender === 'mirror' ? 'text-purple-300' : 'text-blue-300'}`}>{log.sender === 'mirror' ? 'THE MIRROR' : 'YOU'}</span>
+                            <p className="text-white/90 text-base font-medium leading-relaxed drop-shadow-md">{log.text}</p>
+                        </div>
+                    ))}
+                </div>
             )}
 
-             {/* Scanning Overlay (Full Screen Effect) */}
-             {state === MirrorState.SCANNING && (
-              <div className="absolute inset-0 z-40 pointer-events-none overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.8)] animate-[scan_2s_ease-in-out_infinite]"></div>
-                <div className="absolute top-4 left-1/2 transform -translate-x-1/2 text-cyan-400 font-mono text-xs tracking-[0.2em] bg-black/50 px-3 py-1 rounded">ACQUIRING TARGET</div>
-                <div className="absolute bottom-20 left-10 text-cyan-500/50 font-mono text-[10px] flex flex-col gap-1">
-                    <span>LiDAR: ON</span>
-                    <span>SPECTRO: ACTIVE</span>
-                    <span>AI-CORE: ER-1.5</span>
+            {/* --- MODALS --- */}
+
+            {/* Developer Notes Modal */}
+            {showNotesModal && (
+                <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in">
+                    <div className="bg-gray-900 border border-yellow-500/30 p-6 rounded-2xl w-full max-w-lg shadow-2xl relative h-[60vh] flex flex-col">
+                        <button onClick={() => setShowNotesModal(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20}/></button>
+                        <h2 className="text-xl font-mono text-yellow-300 mb-4 flex items-center gap-2"><ScrollText size={20}/> Developer Log</h2>
+                        
+                        <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                            {developerNotes.length === 0 ? (
+                                <div className="text-gray-500 text-center mt-10 italic">No notes recorded yet. <br/> Ask the mirror to "Leave a note for the developer".</div>
+                            ) : (
+                                developerNotes.map((note) => (
+                                    <div key={note.id} className="bg-black/50 border border-gray-700 p-4 rounded-lg">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${note.priority === 'HIGH' ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>{note.priority || 'NORMAL'}</span>
+                                            <span className="text-[10px] text-gray-600">{new Date(note.date).toLocaleString()}</span>
+                                        </div>
+                                        <p className="text-gray-300 text-sm font-mono">{note.message}</p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        
+                        <div className="mt-4 pt-4 border-t border-gray-800">
+                             <button onClick={() => setDeveloperNotes([])} className="text-xs text-red-500 hover:text-red-400 flex items-center gap-1"><Trash2 size={12}/> Clear All Logs</button>
+                        </div>
+                    </div>
                 </div>
-                {/* Crosshairs */}
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 border border-cyan-500/30 rounded-full flex items-center justify-center">
-                    <div className="w-60 h-60 border-t border-b border-cyan-500/50 rounded-full animate-spin-slow"></div>
-                    <div className="w-2 h-2 bg-cyan-500 rounded-full"></div>
-                </div>
-              </div>
             )}
             
-            {/* Bottom Controls Bar */}
-            <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50 flex gap-4 items-center">
-                {isActive && (
-                  <button onClick={stopSession} className="p-5 rounded-full bg-red-500/20 hover:bg-red-500/40 text-red-200 border border-red-500/50 transition-all hover:scale-105 shadow-lg shadow-red-500/10" title="Stop Session"><StopCircle className="w-8 h-8" /></button>
-                )}
-                <div className="flex gap-4 p-3 rounded-full bg-gray-900/90 border border-gray-700 backdrop-blur-lg shadow-2xl">
-                     {isActive && (
-                       <button onClick={() => setIsMicOn(!isMicOn)} className={`p-4 rounded-full border transition-all hover:scale-110 ${isMicOn ? 'bg-gray-800/50 hover:bg-gray-700/50 text-gray-200 border-white/10' : 'bg-red-900/50 text-red-200 border-red-500/30'}`} title="Mute/Unmute">
-                          {isMicOn ? <Mic className="w-8 h-8" /> : <MicOff className="w-8 h-8" />}
-                       </button>
-                     )}
-                     
-                     {/* Persona Selector */}
-                     <button onClick={() => setShowPersonaModal(true)} className="p-4 rounded-full bg-gray-800/50 hover:bg-gray-700/50 text-gray-200 border border-white/10 transition-all hover:scale-110" title="Voice Settings">
-                        <Settings className="w-8 h-8" />
-                     </button>
-
-                     <button onClick={handleSwitchCamera} className="p-4 rounded-full bg-gray-800/50 hover:bg-gray-700/50 text-gray-200 border border-white/10 transition-all hover:scale-110" title="Switch Camera"><SwitchCamera className="w-8 h-8" /></button>
-                     
-                     <button onClick={() => setShowAvatarModal(true)} className="p-4 rounded-full bg-gray-800/50 hover:bg-gray-700/50 text-gray-200 border border-white/10 transition-all hover:scale-110" title="Choose Reflection">
-                        {identity ? <img src={identity.image} className="w-8 h-8 rounded-full object-cover border border-purple-400" alt="User" /> : <User className="w-8 h-8" />}
-                     </button>
-                     
-                     <button onClick={() => setShowConjureModal(true)} className="p-4 rounded-full bg-purple-900/30 hover:bg-purple-900/50 text-purple-300 border border-purple-500/30 transition-all hover:scale-110" title="Conjure AI Face"><Sparkles className="w-8 h-8" /></button>
-                     
-                     {/* RADIO BUTTON */}
-                     {isActive && (
-                         <button onClick={triggerRadio} className="p-4 rounded-full bg-orange-900/30 hover:bg-orange-900/50 text-orange-300 border border-orange-500/30 transition-all hover:scale-110" title="Play Radio">
-                             <Radio className="w-8 h-8" />
-                         </button>
-                     )}
-
-                     {/* ROBOTICS SCAN BUTTON */}
-                     {isActive && (
-                        <button onClick={triggerManualScan} className="p-4 rounded-full bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-300 border border-cyan-500/30 transition-all hover:scale-110 hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]" title="Robotics ER 1.5 Scan">
-                           <ScanLine className="w-8 h-8" />
-                        </button>
-                     )}
+            {/* Conjure Modal */}
+            {showConjureModal && (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in">
+                    <div className="bg-gray-900 border border-purple-500/30 p-6 rounded-2xl w-full max-w-md shadow-2xl relative">
+                        <button onClick={() => setShowConjureModal(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20}/></button>
+                        <h2 className="text-xl font-magic text-purple-300 mb-4 flex items-center gap-2"><Wand2 size={20}/> Conjure Appearance</h2>
+                        
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                            <button onClick={() => setShowAvatarModal(true)} className="p-4 rounded-xl bg-gray-800 hover:bg-purple-900/30 border border-gray-700 hover:border-purple-500/50 transition-all flex flex-col items-center gap-2">
+                                <UserCheck size={24} className="text-purple-400"/>
+                                <span className="text-sm font-semibold">Choose Avatar</span>
+                            </button>
+                            <button onClick={handleSurpriseMe} className="p-4 rounded-xl bg-gray-800 hover:bg-purple-900/30 border border-gray-700 hover:border-purple-500/50 transition-all flex flex-col items-center gap-2">
+                                <Sparkles size={24} className="text-yellow-400"/>
+                                <span className="text-sm font-semibold">Surprise Me</span>
+                            </button>
+                        </div>
+                        
+                        <form onSubmit={handleConjureSubmit} className="relative">
+                            <input 
+                                type="text" 
+                                value={conjureInput}
+                                onChange={(e) => setConjureInput(e.target.value)}
+                                placeholder="Describe your new form..." 
+                                className="w-full bg-black/50 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
+                            />
+                            <button type="submit" className="absolute right-2 top-2 p-1.5 bg-purple-600 rounded-lg text-white hover:bg-purple-500 transition-colors">
+                                <Wand2 size={16} />
+                            </button>
+                        </form>
+                        
+                         <div className="mt-4 pt-4 border-t border-gray-800 flex justify-between items-center">
+                            <span className="text-xs text-gray-500">Or upload your own visage</span>
+                            <label className="cursor-pointer text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1">
+                                <Upload size={12} /> Upload
+                                <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+                            </label>
+                         </div>
+                    </div>
                 </div>
-            </div>
-        </div>
+            )}
 
+            {/* Avatar Selection Modal */}
+            {showAvatarModal && (
+                <div className="absolute inset-0 z-[65] flex items-center justify-center bg-black/90 backdrop-blur-xl animate-fade-in">
+                     <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl w-full max-w-lg shadow-2xl relative">
+                        <button onClick={() => setShowAvatarModal(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20}/></button>
+                        <h2 className="text-xl font-bold text-white mb-6">Select a Guise</h2>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            {PRESET_AVATARS.map((avatar) => (
+                                <button key={avatar.name} onClick={() => handlePresetSelect(avatar.url)} className="group relative aspect-square rounded-xl overflow-hidden border border-gray-800 hover:border-purple-500 transition-all">
+                                    <img src={avatar.url} alt={avatar.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-center p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <span className="text-xs font-semibold text-white">{avatar.name}</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                        {isProcessingPreset && <div className="absolute inset-0 bg-black/60 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div></div>}
+                     </div>
+                </div>
+            )}
+
+            {/* Persona/Settings Modal */}
+            {showPersonaModal && (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in">
+                     <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl w-full max-w-md shadow-2xl relative">
+                        <button onClick={() => setShowPersonaModal(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20}/></button>
+                        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Settings size={20}/> Mirror Settings</h2>
+                        
+                        <div className="space-y-6">
+                            <div>
+                                <label className="text-xs text-gray-400 uppercase tracking-wider mb-3 block">Personality Core</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {PERSONAS.map(p => (
+                                        <button 
+                                            key={p.id} 
+                                            onClick={() => handlePersonaSelect(p)}
+                                            className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${currentPersona.id === p.id ? `bg-gray-800 border-${p.color.split('-')[1]}-500 ring-1 ring-${p.color.split('-')[1]}-500` : 'bg-transparent border-gray-700 hover:bg-gray-800'}`}
+                                        >
+                                            <div className={`${p.color}`}>{p.icon}</div>
+                                            <div className="text-left">
+                                                <div className={`text-sm font-semibold ${currentPersona.id === p.id ? 'text-white' : 'text-gray-400'}`}>{p.name}</div>
+                                                <div className="text-[10px] text-gray-500">{p.voiceName}</div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="text-xs text-gray-400 uppercase tracking-wider mb-3 block flex justify-between">
+                                    <span>Ambient Volume</span>
+                                    <span>{Math.round(ambientVolume * 100)}%</span>
+                                </label>
+                                <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="1" 
+                                    step="0.01" 
+                                    value={ambientVolume} 
+                                    onChange={(e) => setAmbientVolume(parseFloat(e.target.value))}
+                                    className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-white"
+                                />
+                            </div>
+
+                             <div>
+                                <label className="text-xs text-gray-400 uppercase tracking-wider mb-3 block flex justify-between">
+                                    <span>Radio Volume</span>
+                                    <span>{Math.round(radioVolume * 100)}%</span>
+                                </label>
+                                <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="1" 
+                                    step="0.01" 
+                                    value={radioVolume} 
+                                    onChange={(e) => setRadioVolume(parseFloat(e.target.value))}
+                                    className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-white"
+                                />
+                            </div>
+                        </div>
+                     </div>
+                </div>
+            )}
+            
       </div>
 
-      {/* 3. RIGHT PANEL: YOUTUBE */}
-      {showYoutube && (
-        <div className="relative w-1/3 min-w-[320px] max-w-[500px] h-full bg-gray-900 border-l border-gray-800 transition-all duration-500 ease-in-out z-20 flex flex-col">
-            <div className="p-4 bg-gray-950 border-b border-gray-800 flex justify-between items-center">
-                <div className="flex items-center gap-2 text-red-400 font-magic">
-                    <Youtube size={18} />
-                    <span>Vision Crystal</span>
+      {/* 3. RIGHT PANEL: MEDIA (YouTube / Radio) */}
+      {(showYoutube || showRadio) && (
+          <div className="relative w-1/3 min-w-[320px] max-w-[500px] h-full bg-gray-900 border-l border-gray-800 transition-all duration-500 ease-in-out z-20 flex flex-col">
+                <div className="p-4 bg-gray-950 border-b border-gray-800 flex justify-between items-center">
+                    <div className="flex items-center gap-2 text-white font-magic">
+                        {showYoutube ? <Youtube size={18} className="text-red-500"/> : <Radio size={18} className="text-green-500"/>}
+                        <span>{showYoutube ? 'Vision Sphere' : 'Ethereal Waves'}</span>
+                    </div>
+                    <button onClick={() => { setShowYoutube(false); setShowRadio(false); }} className="text-gray-500 hover:text-white"><X size={18}/></button>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={() => setAutoplayYoutube(!autoplayYoutube)} className="text-gray-400 hover:text-white" title="Toggle Autoplay">
-                        {autoplayYoutube ? <ToggleRight className="text-red-400" size={20}/> : <ToggleLeft className="text-gray-500" size={20}/>}
-                    </button>
-                    <button onClick={() => setShowYoutube(false)} className="text-gray-500 hover:text-white"><X size={18}/></button>
+                
+                <div className="flex-1 bg-black relative flex items-center justify-center">
+                    {showYoutube && youtubeQuery && (
+                        <div className="w-full h-full">
+                            <iframe
+                                width="100%"
+                                height="100%"
+                                src={`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(youtubeQuery)}&autoplay=${autoplayYoutube ? 1 : 0}`}
+                                title="YouTube video player"
+                                frameBorder="0"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                            ></iframe>
+                        </div>
+                    )}
+
+                    {showRadio && radioStation && (
+                         <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-[url('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=2070')] bg-cover bg-center">
+                            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+                            <div className="relative z-10 flex flex-col items-center">
+                                <div className="w-32 h-32 rounded-full border-4 border-green-500/50 shadow-[0_0_30px_rgba(34,199,89,0.3)] flex items-center justify-center bg-black/50 mb-6 animate-pulse-slow">
+                                    <Music size={48} className="text-green-400" />
+                                </div>
+                                <h2 className="text-2xl font-bold text-white mb-2">{radioStation.name}</h2>
+                                <p className="text-green-400 text-sm uppercase tracking-widest mb-8">{radioStation.genre} • {radioStation.description}</p>
+                                
+                                <audio ref={radioAudioRef} src={radioStation.url} autoPlay controls className="w-full mt-4 opacity-80 hover:opacity-100 transition-opacity" />
+                            </div>
+                         </div>
+                    )}
                 </div>
-            </div>
-            <div className="flex-1 bg-black">
-                {youtubeQuery ? (
-                    <iframe 
-                      width="100%" 
-                      height="100%" 
-                      src={`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(youtubeQuery)}&autoplay=${autoplayYoutube ? 1 : 0}`} 
-                      title="YouTube video player" 
-                      frameBorder="0" 
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                      allowFullScreen
-                    ></iframe>
-                ) : (
-                    <div className="h-full flex items-center justify-center text-gray-700">No Vision Summoned</div>
-                )}
-            </div>
-        </div>
-      )}
-
-      {/* Hidden Elements */}
-      <canvas ref={canvasRef} className="hidden" />
-      <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-
-      {/* Modals */}
-      
-      {/* Persona Selection Modal */}
-      {showPersonaModal && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
-           <div className="w-full max-w-lg bg-gray-900 border border-gray-700 rounded-2xl p-6 shadow-[0_0_50px_rgba(255,255,255,0.1)]">
-               <div className="flex justify-between items-center mb-6">
-                 <h3 className="font-magic text-xl text-white">Select Voice Interface</h3>
-                 <button onClick={() => setShowPersonaModal(false)} className="text-gray-400 hover:text-white"><X className="w-6 h-6"/></button>
-               </div>
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {PERSONAS.map(p => (
-                      <button 
-                        key={p.id}
-                        onClick={() => handlePersonaSelect(p)}
-                        className={`p-4 rounded-xl border flex items-center gap-4 transition-all hover:scale-105 ${currentPersona.id === p.id ? 'bg-gray-800 border-white/50 shadow-lg' : 'bg-gray-800/40 border-gray-700 hover:bg-gray-800'}`}
-                      >
-                          <div className={`p-3 rounded-full bg-black/50 ${p.color}`}>{p.icon}</div>
-                          <div className="text-left">
-                              <div className={`font-bold text-lg ${p.color}`}>{p.name}</div>
-                              <div className="text-xs text-gray-400 uppercase tracking-wider">{p.voiceName} Voice</div>
-                          </div>
-                      </button>
-                  ))}
-               </div>
-           </div>
-        </div>
-      )}
-
-      {showAvatarModal && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
-          <div className="w-full max-w-lg bg-gray-900 border border-purple-500/30 rounded-2xl p-6 shadow-[0_0_50px_rgba(100,0,255,0.2)]">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-magic text-xl text-purple-300">Choose Reflection</h3>
-              <button onClick={() => setShowAvatarModal(false)} className="text-gray-400 hover:text-white"><X className="w-6 h-6"/></button>
-            </div>
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                 <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-3 p-4 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-all group">
-                   <Upload className="w-5 h-5 text-purple-400 group-hover:text-purple-300" /> <span className="text-sm font-semibold">Upload Photo</span>
-                 </button>
-                 <button onClick={resetToCamera} className="flex items-center justify-center gap-3 p-4 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-all group">
-                   <Camera className="w-5 h-5 text-blue-400 group-hover:text-blue-300" /> <span className="text-sm font-semibold">Use Camera</span>
-                 </button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {PRESET_AVATARS.map((preset) => (
-                  <button key={preset.name} disabled={isProcessingPreset} onClick={() => handlePresetSelect(preset.url)} className="relative aspect-square rounded-xl overflow-hidden border border-gray-700 hover:border-purple-500 transition-all group">
-                    <img src={preset.url} alt={preset.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" crossOrigin="anonymous"/>
-                    <div className="absolute inset-x-0 bottom-0 bg-black/60 backdrop-blur-sm p-2 text-center"><span className="text-[10px] uppercase font-bold text-gray-300">{preset.name}</span></div>
-                    {isProcessingPreset && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div></div>}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
-        </div>
       )}
 
-      {showConjureModal && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-gray-900 border border-purple-500/30 rounded-2xl p-6 shadow-[0_0_50px_rgba(100,0,255,0.2)]">
-              <div className="flex justify-between items-center mb-4"><h3 className="font-magic text-xl text-purple-300">Conjure Visage</h3><button onClick={() => setShowConjureModal(false)} className="text-gray-400 hover:text-white transition-colors"><X className="w-6 h-6"/></button></div>
-              <form onSubmit={handleConjureSubmit} className="flex flex-col gap-4">
-                  <textarea value={conjureInput} onChange={(e) => setConjureInput(e.target.value)} placeholder="Describe the face..." className="w-full h-32 bg-black/50 border border-gray-700 rounded-xl p-4 text-white focus:border-purple-500 focus:outline-none resize-none placeholder:text-gray-600"/>
-                  <div className="flex gap-3">
-                      <button type="button" onClick={handleSurpriseMe} className="flex-1 py-3 rounded-xl border border-gray-700 hover:bg-gray-800 text-gray-300 transition-colors flex items-center justify-center gap-2 group"><Sparkles className="w-4 h-4 group-hover:text-purple-400 transition-colors" /><span>Surprise Me</span></button>
-                      <button type="submit" disabled={!conjureInput.trim()} className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Conjure</button>
-                  </div>
-              </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
-
-export default MagicMirror;
